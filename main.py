@@ -21,7 +21,8 @@ from models.heavynet import HeavyNetFeatureExtractor, HeavyNet
 from utils.rr_computing import compute_rr_features
 from utils.pretext_task import generate_pretext_sequences
 from engine import train_epoch, evaluate_epoch
-from utils.plot import plot_confusion_matrix, plot_training_history, plot_signals_with_r_peaks, plot_signals_with_annotations
+from utils.plot_output_results import plot_confusion_matrix, plot_training_history
+from utils.plot_signals_utils import plot_signals_with_r_peaks, plot_signals_with_annotations
 from database.mit.process_mit import main as process_mit_data
 from utils.file_utils import write_metrics_to_file
 
