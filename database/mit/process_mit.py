@@ -11,8 +11,18 @@ from scipy.signal import savgol_filter
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 from utils.rr_computing import Scaler
-from config import (MIT_NORMAL_BEAT_TYPES, MIT_S_BEAT_TYPES, MIT_V_BEAT_TYPES,
-                    MIT_SEGMENT_SIZE, MIT_RAW_DATA_PATH, BASE_PATH, MIT_TRAIN_SIGNALS, MIT_TEST_SIGNALS)
+from config import (DATASETS_ROOT)
+
+# MIT Dataset Configuration
+MIT_RAW_DATA_PATH = os.path.join(DATASETS_ROOT, "MIT")
+MIT_TRAIN_SIGNALS = [101, 106, 108, 109, 112, 114, 115, 116, 118, 119, 122, 124, 201, 203, 205, 207, 208, 209, 215, 220, 223, 230]
+MIT_TEST_SIGNALS = [100, 103, 105, 111, 113, 117, 121, 123, 200, 202, 210, 212, 213, 214, 219, 221, 222, 228, 231, 232, 233, 234]
+MIT_NORMAL_BEAT_TYPES = ['N', 'L', 'R', 'e', 'j']
+MIT_S_BEAT_TYPES = ['A', 'a', 'J', 'S']
+MIT_V_BEAT_TYPES = ['V', 'E']
+MIT_SEGMENT_SIZE = 1250
+MIT_BEAT_PRE_R = 150
+MIT_BEAT_POST_R = 149
 
 
 

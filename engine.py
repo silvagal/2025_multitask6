@@ -5,7 +5,7 @@ from tqdm import tqdm
 from sklearn.metrics import accuracy_score, precision_score, recall_score, confusion_matrix, classification_report
 
 def train_epoch(model, loader, optimizer, criterion_main, criterion_aux, criterion_pretext,
-                multitask_flag, with_pretext_flag, current_epoch, epochs):
+                multitask_flag, with_pretext_flag, with_rr_flag, current_epoch, epochs):
     model.train()
     loop = tqdm(loader, desc=f"Epoch {current_epoch + 1:02d}/{epochs} Trn", leave=False)
     total_loss_main, total_loss_rr, total_loss_pretext = 0, 0, 0
@@ -16,62 +16,58 @@ def train_epoch(model, loader, optimizer, criterion_main, criterion_aux, criteri
         labels_main = batch['ac'].to(DEVICE)
         optimizer.zero_grad()
 
-        if not multitask_flag: # Single-task
-            preds_main = model(inputs)
+        outputs = model(inputs)
+
+        if not multitask_flag:
+            preds_main = outputs
             loss_total = criterion_main(preds_main, labels_main)
             total_loss_main += loss_total.item()
             loop.set_postfix(loss=loss_total.item())
-        else: # Multitask (2 or 3 tasks)
-            labels_rr = batch['rr'].to(DEVICE)
+        else:
+            # Unpack outputs and log_vars based on the model's configuration
+            num_tasks = 1 + with_rr_flag + with_pretext_flag
+            preds = outputs[:num_tasks]
+            log_vars = outputs[num_tasks:]
+
+            preds_main = preds[0]
+            log_var_main = log_vars[0]
+
+            loss_main_raw = criterion_main(preds_main, labels_main)
+            prec_main = torch.exp(-log_var_main)
+            loss_total = prec_main * loss_main_raw + log_var_main
+            total_loss_main += loss_main_raw.item()
+
+            postfix_dict = {'Lmain': loss_main_raw.item(), 'log_v_main': log_var_main.item()}
+
+            task_idx = 1
+            if with_rr_flag:
+                preds_rr = preds[task_idx]
+                labels_rr = batch['rr'].to(DEVICE)
+                log_var_rr = log_vars[task_idx]
+
+                loss_rr_raw = criterion_aux(preds_rr, labels_rr)
+                prec_rr = torch.exp(-log_var_rr)
+                loss_total += prec_rr * loss_rr_raw + log_var_rr
+                total_loss_rr += loss_rr_raw.item()
+
+                postfix_dict['Lrr'] = loss_rr_raw.item()
+                postfix_dict['log_v_rr'] = log_var_rr.item()
+                task_idx += 1
 
             if with_pretext_flag:
+                preds_pretext = preds[task_idx]
                 labels_pretext = batch['pretext'].to(DEVICE)
-                preds_main, preds_rr, preds_pretext, log_var_main, log_var_rr, log_var_pretext = model(inputs)
+                log_var_pretext = log_vars[task_idx]
 
-                loss_main_raw = criterion_main(preds_main, labels_main)
-                loss_rr_raw = criterion_aux(preds_rr, labels_rr)
                 loss_pretext_raw = criterion_pretext(preds_pretext, labels_pretext)
-
-                prec_main = torch.exp(-log_var_main)
-                loss_main = prec_main * loss_main_raw + log_var_main
-
-                prec_rr = torch.exp(-log_var_rr)
-                loss_rr = prec_rr * loss_rr_raw + log_var_rr
-
                 prec_pretext = torch.exp(-log_var_pretext)
-                loss_pretext = prec_pretext * loss_pretext_raw + log_var_pretext
-
-                loss_total = loss_main + loss_rr + loss_pretext
-
-                total_loss_main += loss_main_raw.item()
-                total_loss_rr += loss_rr_raw.item()
+                loss_total += prec_pretext * loss_pretext_raw + log_var_pretext
                 total_loss_pretext += loss_pretext_raw.item()
 
-                loop.set_postfix({
-                    'Lmain': loss_main_raw.item(), 'Lrr': loss_rr_raw.item(), 'Lpre': loss_pretext_raw.item(),
-                    'log_v_main': log_var_main.item(), 'log_v_rr': log_var_rr.item(), 'log_v_pre': log_var_pretext.item()
-                })
-            else: # 2-task multitask
-                preds_main, preds_rr, log_var_main, log_var_rr = model(inputs)
+                postfix_dict['Lpre'] = loss_pretext_raw.item()
+                postfix_dict['log_v_pre'] = log_var_pretext.item()
 
-                loss_main_raw = criterion_main(preds_main, labels_main)
-                loss_rr_raw = criterion_aux(preds_rr, labels_rr)
-
-                prec_main = torch.exp(-log_var_main)
-                loss_main = prec_main * loss_main_raw + log_var_main
-
-                prec_rr = torch.exp(-log_var_rr)
-                loss_rr = prec_rr * loss_rr_raw + log_var_rr
-
-                loss_total = loss_main + loss_rr
-
-                total_loss_main += loss_main_raw.item()
-                total_loss_rr += loss_rr_raw.item()
-
-                loop.set_postfix({
-                    'Lmain': loss_main_raw.item(), 'Lrr': loss_rr_raw.item(),
-                    'log_v_main': log_var_main.item(), 'log_v_rr': log_var_rr.item()
-                })
+            loop.set_postfix(postfix_dict)
 
         loss_total.backward()
         optimizer.step()
@@ -81,13 +77,13 @@ def train_epoch(model, loader, optimizer, criterion_main, criterion_aux, criteri
 
     return {
         'loss_main': total_loss_main / len(loader),
-        'loss_rr': total_loss_rr / len(loader),
-        'loss_pretext': total_loss_pretext / len(loader),
+        'loss_rr': total_loss_rr / len(loader) if with_rr_flag else 0,
+        'loss_pretext': total_loss_pretext / len(loader) if with_pretext_flag else 0,
         'accuracy': accuracy_score(all_labels_main, all_preds_main)
     }
 
 def evaluate_epoch(model, loader, criterion_main, criterion_aux, criterion_pretext,
-                   multitask_flag, with_pretext_flag, metrics=False):
+                   multitask_flag, with_pretext_flag, with_rr_flag, metrics=False):
     model.eval()
     total_loss_main, total_loss_rr, total_loss_pretext = 0.0, 0.0, 0.0
     all_preds_main, all_labels_main, all_scores_main = [], [], []
@@ -96,36 +92,42 @@ def evaluate_epoch(model, loader, criterion_main, criterion_aux, criterion_prete
         for batch in loader:
             inputs = batch['IEGM_seg'].to(DEVICE)
             labels_main = batch['ac'].to(DEVICE)
-            loss_main, loss_rr, loss_pretext = 0, 0, 0
 
-            if not multitask_flag: # Single-task
-                preds_main = model(inputs)
+            outputs = model(inputs)
+
+            if not multitask_flag:
+                preds_main = outputs
                 loss_main = criterion_main(preds_main, labels_main)
-            else: # Multitask (2 or 3 tasks)
-                labels_rr = batch['rr'].to(DEVICE)
-                if with_pretext_flag:
-                    preds_main, preds_rr, preds_pretext, _, _, _ = model(inputs)
-                    if 'pretext' in batch:
-                        labels_pretext = batch['pretext'].to(DEVICE)
-                        loss_pretext = criterion_pretext(preds_pretext, labels_pretext)
-                        total_loss_pretext += loss_pretext.item()
-                else:  # 2-task multitask
-                    preds_main, preds_rr, _, _ = model(inputs)
+                total_loss_main += loss_main.item()
+            else:
+                num_tasks = 1 + with_rr_flag + with_pretext_flag
+                preds = outputs[:num_tasks]
 
+                preds_main = preds[0]
                 loss_main = criterion_main(preds_main, labels_main)
-                loss_rr = criterion_aux(preds_rr, labels_rr)
+                total_loss_main += loss_main.item()
 
-            total_loss_main += loss_main.item()
-            if isinstance(loss_rr, torch.Tensor): total_loss_rr += loss_rr.item()
+                task_idx = 1
+                if with_rr_flag:
+                    preds_rr = preds[task_idx]
+                    labels_rr = batch['rr'].to(DEVICE)
+                    loss_rr = criterion_aux(preds_rr, labels_rr)
+                    total_loss_rr += loss_rr.item()
+                    task_idx += 1
+
+                if with_pretext_flag and 'pretext' in batch:
+                    preds_pretext = preds[task_idx]
+                    labels_pretext = batch['pretext'].to(DEVICE)
+                    loss_pretext = criterion_pretext(preds_pretext, labels_pretext)
+                    total_loss_pretext += loss_pretext.item()
 
             if metrics:
                 all_labels_main.extend(labels_main.cpu().numpy())
                 all_preds_main.extend(preds_main.argmax(dim=1).cpu().numpy())
-                # Adiciona a probabilidade softmax para a classe positiva (classe 1)
                 all_scores_main.extend(torch.softmax(preds_main, dim=1)[:, 1].cpu().numpy())
 
     avg_loss_main = total_loss_main / len(loader)
-    avg_loss_rr = total_loss_rr / len(loader) if multitask_flag else 0
+    avg_loss_rr = total_loss_rr / len(loader) if with_rr_flag else 0
     avg_loss_pretext = total_loss_pretext / len(loader) if with_pretext_flag else 0
 
     if not metrics:

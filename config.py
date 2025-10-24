@@ -6,6 +6,7 @@ import os
 # --- Project Root ---
 # Determines the absolute path of the project's root directory
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
+DATASETS_ROOT = os.path.abspath(os.path.join(PROJECT_ROOT, '../datasets'))
 
 # Default configurations
 SIZE = 1250
@@ -29,19 +30,6 @@ PERSISTENT_WORKERS = False
 DATASET = 'mit'  # 'iegm' or 'mit'
 BASE_PATH = os.path.join(PROJECT_ROOT, "database")
 ROOT_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
-MIT_RAW_DATA_PATH = '/media/work/guilhermesilva/datasets/MIT'
-
-
-# MIT Dataset Configuration
-MIT_TRAIN_SIGNALS = [101, 106, 108, 109, 112, 114, 115, 116, 118, 119, 122, 124, 201, 203, 205, 207, 208, 209, 215, 220, 223, 230]
-MIT_TEST_SIGNALS = [100, 103, 105, 111, 113, 117, 121, 123, 200, 202, 210, 212, 213, 214, 219, 221, 222, 228, 231, 232, 233, 234]
-MIT_SIGNAL_FILES = MIT_TRAIN_SIGNALS + MIT_TEST_SIGNALS
-MIT_NORMAL_BEAT_TYPES = ['N', 'L', 'R', 'e', 'j']
-MIT_S_BEAT_TYPES = ['A', 'a', 'J', 'S']
-MIT_V_BEAT_TYPES = ['V', 'E']
-MIT_SEGMENT_SIZE = 1250
-MIT_BEAT_PRE_R = 150
-MIT_BEAT_POST_R = 149
 
 # Pretext Task Configuration
 QRS_COMPLEX_PROPORTION = 0.4
